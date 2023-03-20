@@ -1,10 +1,95 @@
 <template>
   <v-app style="min-height: '800px'">
     <v-main id="main">
+      <v-dialog v-model="hasError">
+        <v-card>
+
+          <p>
+            {{ errorMessage }}
+          </p>
+          <v-col>
+            <v-btn rounded color="blue" dark @click="hasError = false">确定</v-btn>
+          </v-col>
+        </v-card>
+      </v-dialog>
       <v-container fluid class="fill-height">
         <div>
-          <v-row style="height: 100%">
+          <v-row>
             <v-col>
+              <v-row>
+                <v-btn class="mx-2" fab dark large color="green" @click="nDialog()">
+                  -n
+                </v-btn>
+
+                <v-btn class="mx-2" fab dark large color="blue-grey" @click.stop="wDialog = true">
+                  -w
+                </v-btn>
+                <v-dialog v-model="wDialog">
+                  <v-card>
+                    <v-text-field style="width:50%" label="首字母限制 -h" class="my-0 " v-model="head" />
+                    <v-text-field style="width:50%" label="尾字母限制 -h" class="my-0 " v-model="tail" />
+                    <v-text-field style="width:50%" label="不允许出现的首字母限制 -h" class="my-0 " v-model="reject" />
+                    <v-checkbox label="允许单词环 -r" class="mt-0" v-model="loop"></v-checkbox>
+                    <v-col>
+                      <v-btn rounded color="blue" dark @click="wDialogConfirm(1)">确定</v-btn>
+                      <v-btn rounded color="green" dark @click="wDialogCancel()">取消</v-btn>
+                    </v-col>
+                  </v-card>
+                </v-dialog>
+                <v-btn class=" mx-2" fab dark large color="teal" @click.stop="cDialog = true">
+                  -c
+                </v-btn>
+                <v-dialog v-model="cDialog">
+                  <v-card>
+                    <v-text-field style="width:50%" label="首字母限制 -h" class="my-0 " v-model="head" />
+                    <v-text-field style="width:50%" label="尾字母限制 -h" class="my-0 " v-model="tail" />
+                    <v-text-field style="width:50%" label="不允许出现的首字母限制 -h" class="my-0 " v-model="reject" />
+                    <v-checkbox label="允许单词环 -r" class="mt-0" v-model="loop"></v-checkbox>
+                    <v-col>
+                      <v-btn rounded color="blue" dark @click="cDialogConfirm(2)">确定</v-btn>
+                      <v-btn rounded color="green" dark @click="cDialogCancel()">取消</v-btn>
+                    </v-col>
+                  </v-card>
+                </v-dialog>
+              </v-row>
+              <v-row>
+                <v-card>
+                  <p class="mb-1 headline">
+                  当前参数
+                </p>
+                {{ argsArray[mode] }} -h:{{ head }} -t:{{ tail }} -j: {{ reject }} -r: {{ loop }}
+                </v-card>
+              </v-row>
+            </v-col>
+            <v-col>
+              <div>
+                <v-btn rounded color="green" dark @click="textBox = true">文本框输入</v-btn>
+                <v-dialog v-model="textBox">
+                  <v-card>
+                    <p class="mb-1 headline">
+                      文本框输入
+                    </p>
+                    <v-textarea filled no-resize placeholder="输入单词" v-model="inputText">
+                    </v-textarea>
+                    <v-col>
+                      <v-btn rounded color="blue" dark @click="inputTextConfirm()">确定</v-btn>
+                      <v-btn rounded color="green" dark @click="inputTextCancel()">取消</v-btn>
+                    </v-col>
+                  </v-card>
+                </v-dialog>
+                <v-btn rounded color="blue-grey" dark @click="importText()">文件导入</v-btn>
+                
+                
+    
+
+                <v-btn rounded color="secondary" dark @click="exportText()">文件导出</v-btn>
+
+                <v-btn rounded color="blue" dark @click="calc()">计算</v-btn>
+              </div>
+            </v-col>
+          </v-row>
+          <v-row style="height: 80%">
+            <v-col style="width: 33%">
               <p class="mb-1 headline">
                 <v-icon color="primary" large>mdi-polymer</v-icon>
                 参数说明
@@ -153,6 +238,27 @@
                 </v-tabs-items>
               </v-card>
             </v-col>
+
+            <v-col style="width: 33%">
+              <p class="mb-1 headline">
+                输入
+              </p>
+              <v-card-text>
+                <v-textarea filled height="100%" placeholder="输入" style="height: 100%" readonly v-model="inputText" />
+              </v-card-text>
+            </v-col>
+            <v-col style="width: 33%">
+              <p class="mb-1 headline">
+                输出
+              </p>
+              <v-card-text>
+                <v-textarea filled height="100%" placeholder="结果" style="height: 100%" readonly v-model="outputText" />
+              </v-card-text>
+              <v-chip class="ml-4 mb-5 mr-4 elevation-0 py-0" color="green" style="flex-grow: 0" outlined>
+                <v-icon left>mdi-clock-check-outline</v-icon>
+                计算用时：{{ time }} ms
+              </v-chip>
+            </v-col>
           </v-row>
         </div>
       </v-container>
@@ -162,25 +268,191 @@
 
 <script>
 
+const path = window.require('path')
+const ffi = window.require('ffi-napi')
+const corePtr = ffi.DynamicLibrary(path.resolve('./core.dll')).get('vuetifyAPI')
+const core = ffi.ForeignFunction(corePtr, 'string', ['string', 'int', 'char', 'char', 'char', 'bool'])
+const moment = window.require('moment')
+
 
 export default {
   name: 'App',
   data: () => ({
     tab: null,
+    xlsxFile: '',
     items: [
-      { tab: '-n', content: '单词链数量\n-n' },
-      { tab: '-w', content: '<p class="mb-0">Etiam vitae tortor. Curabitur ullamcorper ultricies nisi. Sed magna purus, fermentum eu, tincidunt eu, varius ut, felis. Aliquam lobortis. Suspendisse potenti.</p>' },
-      { tab: '-c', content: 'Tab 3 Content' },
-      { tab: '-h', content: 'Tab 4 Content' },
-      { tab: '-t', content: 'Tab 5 Content' },
-      { tab: '-j', content: 'Tab 6 Content' },
-      { tab: '-r', content: 'Tab 7 Content' },
+      { tab: '-n' },
+      { tab: '-w' },
+      { tab: '-c' },
+      { tab: '-h' },
+      { tab: '-t' },
+      { tab: '-j' },
+      { tab: '-r' },
     ],
+    mode: 0, // 0-n 1-w 2-c
+    loop: false,
+    head: '',
+    tail: '',
+    reject: '',
+    argsArray: ['-n', '-w', '-c'],
+    wDialog: false,
+    cDialog: false,
+    textBox: false,
+    inputText: '',
+    outputText: '',
+    time: '',
+    hasError: false,
+    errorMessage: '',
   }),
 
   methods: {
+   
+    nDialog() {
+      this.mode = 0
+      this.head = ''
+      this.tail = ''
+      this.reject = ''
+      this.loop = false
+    },
+    wDialogConfirm(a) {
+      this.mode = a
+      this.wDialog = false
+    },
+    wDialogCancel() {
+      this.head = ''
+      this.tail = ''
+      this.reject = ''
+      this.loop = false
+      this.wDialog = false
+    },
+    cDialogConfirm(a) {
+      this.mode = a
+      this.cDialog = false
+    },
+    cDialogCancel() {
+      this.head = ''
+      this.tail = ''
+      this.reject = ''
+      this.loop = false
+      this.cDialog = false
+    },
+    inputTextConfirm() {
+      this.textBox = false
+    },
+    inputTextCancel() {
+      this.textBox = false
+      this.inputText = ''
+    },
+    reportError(message) {
+      this.hasError = true
+      this.errorMessage = message
+    },
+    importText() {
+      const { dialog } = require('@electron/remote')
+      const fs = require('fs')
+      const path = require('path')
+      dialog.showOpenDialog({
+        title: '导入文件',
+        buttonLabel: '导入',
+        filters: [{ name: '文本文件', extensions: ['txt'] }],
+      }).then(e => {
+        if (e.canceled === false) {
+          fs.readFile(
+            path.resolve(e.filePaths[0]),
+            'utf-8',
+            (err, data) => {
+              if (err) this.reportError(err.message);
+              this.inputText = data.toString();
+            }
+          )
+        }
+      })
+    },
+    exportText() {
+      const { dialog } = require('@electron/remote')
+      const fs = require('fs')
+      const path = require('path')
+      dialog.showOpenDialog({
+        title: '文件导出',
+        buttonLabel: '保存',
+        filters: [{ name: '文本文件', extensions: ['txt'] }],
+        
+      }).then(e => {
+        if (e.canceled === false) {
+          fs.writeFile(
+            path.resolve(e.filePaths[0]),
+            this.outputText,
+            'utf-8',
+          )
+        }
+      })
+    },
+    calc() {
+      this.outputText = ''
+      let start = moment()
+      if (this.head.length > 1) {
+        this.reportError("参数异常：-h参数须为长度为1的英文字母，当前输入长度大于1")
+        this.calculating = false
+      } else if (this.tail.length > 1) {
+        this.reportError("参数异常：-t参数须为长度为1的英文字母，当前输入长度大于1")
+        this.calculating = false
+      } else if (this.reject.length > 1) {
+        this.reportError("参数异常：-j参数须为长度为1的英文字母，当前输入长度大于1")
+        this.calculating = false
+      } else if (!(this.head.length == 0 || (this.head.charCodeAt(0) >= "a".charCodeAt(0) && this.head.charCodeAt(0) <= "z".charCodeAt(0))
+        || (this.head.charCodeAt(0) >= "A".charCodeAt(0) && this.head.charCodeAt(0) <= "Z".charCodeAt(0)))) {
+        this.reportError("参数异常：-h参数须为长度为1的英文字母，当前输入非英文字母")
+        this.calculating = false
+      } else if (!(this.tail.length == 0 || (this.tail.charCodeAt(0) >= "a".charCodeAt(0) && this.tail.charCodeAt(0) <= "z".charCodeAt(0))
+        || (this.tail.charCodeAt(0) >= "A".charCodeAt(0) && this.tail.charCodeAt(0) <= "Z".charCodeAt(0)))) {
+        this.reportError("参数异常：-t参数须为长度为1的英文字母，当前输入非英文字母")
+        this.calculating = false
+      } else if (!(this.reject.length == 0 || (this.reject.charCodeAt(0) >= "a".charCodeAt(0) && this.reject.charCodeAt(0) <= "z".charCodeAt(0))
+        || (this.reject.charCodeAt(0) >= "A".charCodeAt(0) && this.reject.charCodeAt(0) <= "Z".charCodeAt(0)))) {
+        this.reportError("参数异常：-j参数须为长度为1的英文字母，当前输入非英文字母")
+        this.calculating = false
+      } else {
+        core.async(
+          this.inputText,
+          [0, this.loop ? 3 : 1, this.loop ? 3 : 1][this.mode],
+          !this.head ? 0 : this.head.charCodeAt(0),
+          !this.tail ? 0 : this.tail.charCodeAt(0),
+          !this.reject ? 0 : this.reject.charCodeAt(0),
+          this.mode === 1,
+          (e, d) => {
+            if (e) this.reportError(e)
+            if (/^WordList-GUI: /.test(d)) {
+              if (/^WordList-GUI: CoreError: LOOP/.test(d)) {
+                this.reportError("输入非法：检测到单词环")
+              } else if (/^WordList-GUI: File Input Error: at least two different words/.test(d)) {
+                this.reportError("输入非法：至少输入两个不重复单词")
+              } else if (/^WordList-GUI: CoreError: No Chain/.test(d)) {
+                this.reportError("运行异常：没有合法单词链")
+              } else if (/^WordList-GUI: no solution exists/.test(d)) {
+                this.reportError("不存在可行解")
+              } else {
+                this.reportError(d.substring(14))
+              }
+            } else {
+              this.outputText = d
+              this.time = '' + moment().diff(start) + ''
+            }
+          }
+        )
+      }
+    }
+
+
   }
 };
 </script>
 
+<style lang="scss" scoped>
+.v-btn {
+  text-transform: none;
+}
 
+.v-tab {
+  text-transform: none;
+}
+</style>
